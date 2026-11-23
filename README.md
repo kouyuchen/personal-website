@@ -1,6 +1,6 @@
 # personal-website
 
-一个极简个人网站：白底黑字、一句话居中，手机与电脑自适应。
+一个极简个人网站：白底黑字、一句话居中，附带一个英语填空练习，手机与电脑自适应。
 
 - **访问地址**：https://personal-website-d3e2bi65f7a84f7-1301197628.tcloudbaseapp.com
 - **技术栈**：Vite + React + TypeScript
@@ -16,6 +16,16 @@
 pnpm build
 tcb hosting deploy ./dist -e personal-website-d3e2bi65f7a84f7 --verify --entry index.html
 ```
+
+## 修改英语填空题
+
+题目和答案都放在 [`src/questions.ts`](./src/questions.ts) 里，判题逻辑在 [`src/lib/gradeAnswer.ts`](./src/lib/gradeAnswer.ts)，两者分开管理，改题不用动判断代码。
+
+- `sentence`：题目句子，用 `_____` 表示空缺位置；
+- `answer`：标准答案（判断时忽略前后空格和英文大小写）；
+- `id`：每题唯一，不要重复。
+
+加题时直接在 `fillBlankQuestions` 数组里追加一项即可，页面会自动多显示一道题，每题独立判题。
 
 ## 本地开发
 
@@ -33,6 +43,9 @@ index.html        页面骨架（标题、viewport、浅色模式）
 src/main.tsx      React 入口
 src/App.tsx       页面组件
 src/content.ts    网站文字（改这里）
+src/questions.ts  英语填空题库（改题目和答案）
+src/lib/gradeAnswer.ts  判题逻辑（忽略前后空格和大小写）
+src/components/FillBlankQuiz.tsx  填空练习组件
 src/styles.css    白底黑字、居中的样式
 ```
 
@@ -47,3 +60,4 @@ src/styles.css    白底黑字、居中的样式
 
 - 2026-11-23 初始化项目并首次部署。
 - 2026-11-23 补充仓库与部署信息。
+- 2026-11-23 增加英语填空练习（题目与答案独立管理）。
