@@ -3,6 +3,7 @@
 一个极简个人网站：白底黑字、一句话居中，包含英语填空和在线双人五子棋，手机与电脑自适应。
 
 - **访问地址**：https://personal-website-d3e2bi65f7a84f7-1301197628.tcloudbaseapp.com
+  - 注意：默认域名末尾是 **-1301197628**。如果写成 `-1301197626`，CloudBase 会返回 `INVALID_HOST`，这不是网站故障，而是域名不匹配。
 - **技术栈**：Vite + React + TypeScript + CloudBase 云函数 + PostgreSQL
 - **托管**：腾讯云 CloudBase 静态网站托管（个人版，地域 ap-shanghai，环境 ID personal-website-d3e2bi65f7a84f7）
 - **域名**：使用 CloudBase 默认域名，未绑定自定义域名，不需要 ICP 备案
