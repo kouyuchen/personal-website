@@ -3,8 +3,49 @@
 const BOARD_SIZE = 15;
 const WIN_LENGTH = 5;
 const CELL_COUNT = BOARD_SIZE * BOARD_SIZE;
+const DEFAULT_COLORS = { host: 1, guest: 2 };
 
-function createState(round) {
+function normalizeColors(colors) {
+  if (
+    colors &&
+    (colors.host === 1 || colors.host === 2) &&
+    (colors.guest === 1 || colors.guest === 2) &&
+    colors.host !== colors.guest
+  ) {
+    return { host: colors.host, guest: colors.guest };
+  }
+  return { host: DEFAULT_COLORS.host, guest: DEFAULT_COLORS.guest };
+}
+
+function normalizeState(raw) {
+  const base = raw && typeof raw === "object" ? raw : {};
+  const board =
+    Array.isArray(base.board) && base.board.length === CELL_COUNT
+      ? base.board.slice()
+      : new Array(CELL_COUNT).fill(0);
+
+  return Object.assign({}, base, {
+    board,
+    turn: base.turn === 2 ? 2 : 1,
+    moveCount:
+      Number.isInteger(base.moveCount) && base.moveCount >= 0 ? base.moveCount : 0,
+    result:
+      base.result === "black" || base.result === "white" || base.result === "draw"
+        ? base.result
+        : null,
+    winningLine: Array.isArray(base.winningLine) ? base.winningLine.slice() : null,
+    lastMove:
+      base.lastMove && typeof base.lastMove === "object" ? base.lastMove : null,
+    round: Number.isInteger(base.round) && base.round > 0 ? base.round : 1,
+    colors: normalizeColors(base.colors),
+    rematch: {
+      host: !!(base.rematch && base.rematch.host),
+      guest: !!(base.rematch && base.rematch.guest),
+    },
+  });
+}
+
+function createState(round, colors) {
   return {
     board: new Array(CELL_COUNT).fill(0),
     turn: 1,
@@ -13,13 +54,51 @@ function createState(round) {
     winningLine: null,
     lastMove: null,
     round: round || 1,
+    colors: normalizeColors(colors),
+    rematch: { host: false, guest: false },
   };
 }
 
-function colorForSeat(seat) {
-  if (seat === "host") return 1;
-  if (seat === "guest") return 2;
-  return 0;
+function colorForSeat(state, seat) {
+  if (seat !== "host" && seat !== "guest") return 0;
+  return normalizeColors(state && state.colors)[seat];
+}
+
+function swapColors(colors) {
+  const normalized = normalizeColors(colors);
+  return { host: normalized.guest, guest: normalized.host };
+}
+
+/**
+ * 记录一次“同意重新开始”。
+ * - 只有一方同意：保留原棋盘/胜负，只写 rematch。
+ * - 双方都同意：开新局，交换黑白，清空棋盘，黑棋先手。
+ */
+function applyRematchVote(state, seat) {
+  if (seat !== "host" && seat !== "guest") {
+    return { error: "NOT_IN_ROOM" };
+  }
+
+  const normalized = normalizeState(state);
+  const rematch = {
+    host: normalized.rematch.host,
+    guest: normalized.rematch.guest,
+    [seat]: true,
+  };
+
+  if (rematch.host && rematch.guest) {
+    return {
+      state: createState(normalized.round + 1, swapColors(normalized.colors)),
+      status: "active",
+      started: true,
+    };
+  }
+
+  return {
+    state: Object.assign({}, normalized, { rematch }),
+    status: "finished",
+    started: false,
+  };
 }
 
 function isValidCoord(row, col) {
@@ -73,13 +152,14 @@ function validateMove(state, row, col, color) {
 }
 
 function applyMove(state, row, col, color) {
-  const invalid = validateMove(state, row, col, color);
+  const normalized = normalizeState(state);
+  const invalid = validateMove(normalized, row, col, color);
   if (invalid) return { error: invalid };
 
-  const board = state.board.slice();
+  const board = normalized.board.slice();
   const index = row * BOARD_SIZE + col;
   board[index] = color;
-  const moveCount = state.moveCount + 1;
+  const moveCount = normalized.moveCount + 1;
   const winningLine = findWinningLine(board, index, color);
   const result = winningLine
     ? color === 1
@@ -90,7 +170,7 @@ function applyMove(state, row, col, color) {
       : null;
 
   return {
-    state: Object.assign({}, state, {
+    state: Object.assign({}, normalized, {
       board,
       turn: color === 1 ? 2 : 1,
       moveCount,
@@ -106,8 +186,13 @@ module.exports = {
   BOARD_SIZE,
   WIN_LENGTH,
   CELL_COUNT,
+  DEFAULT_COLORS,
+  normalizeColors,
+  normalizeState,
   createState,
   colorForSeat,
+  swapColors,
+  applyRematchVote,
   isValidCoord,
   validateMove,
   applyMove,

@@ -75,8 +75,8 @@ export async function gomokuMove(roomId: string, row: number, col: number): Prom
   return body.room;
 }
 
-export async function gomokuRestart(roomId: string): Promise<RoomSnapshot> {
-  const body = await call<ApiBody>("gomokuRestart", { roomId });
+export async function gomokuRematch(roomId: string): Promise<RoomSnapshot> {
+  const body = await call<ApiBody>("gomokuRematch", { roomId });
   if (!body.room) throw new RoomApiError("INTERNAL", "重新开始失败");
   return body.room;
 }

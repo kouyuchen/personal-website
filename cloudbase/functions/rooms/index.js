@@ -66,10 +66,11 @@ exports.main = async (event, context) => {
         if (room.status === "waiting") return fail("WAITING_FOR_OPPONENT");
         if (room.status !== "active") return fail("GAME_OVER");
 
-        const color = gomoku.colorForSeat(room.seat);
+        const state = gomoku.normalizeState(room.state);
+        const color = gomoku.colorForSeat(state, room.seat);
         if (!color) return fail("NOT_IN_ROOM");
 
-        const applied = gomoku.applyMove(room.state, row, col, color);
+        const applied = gomoku.applyMove(state, row, col, color);
         if (applied.error) return fail(applied.error);
 
         const committed = await rooms.commit(
@@ -84,29 +85,53 @@ exports.main = async (event, context) => {
         return roomResponse(committed);
       }
 
+      // 旧 action 名保留为别名：老页面调用时也只会投一票，不会单方面重置。
+      case "gomokuRematch":
       case "gomokuRestart": {
         const roomId = readRoomId(event);
         if (!roomId) return fail("INVALID_ROOM_ID");
 
-        const current = await rooms.get(app, roomId, uid);
-        if (!current) return fail("INTERNAL");
-        if (current.error) return fail(current.error);
-        const room = current.room;
-        if (!room) return fail("INTERNAL");
-        if (room.status !== "finished") return fail("GAME_NOT_OVER");
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          const current = await rooms.get(app, roomId, uid);
+          if (!current) return fail("INTERNAL");
+          if (current.error) return fail(current.error);
+          const room = current.room;
+          if (!room) return fail("INTERNAL");
 
-        const nextRound = ((room.state && room.state.round) || 1) + 1;
-        const state = gomoku.createState(nextRound);
-        const committed = await rooms.commit(
-          app,
-          roomId,
-          uid,
-          room.version,
-          "finished",
-          state,
-          "active",
-        );
-        return roomResponse(committed);
+          // 对局已经被对方的重开请求启动：幂等返回最新房间。
+          if (room.status === "active") return roomResponse(current);
+          if (room.status === "waiting") return fail("WAITING_FOR_OPPONENT");
+          if (room.status !== "finished") return fail("GAME_NOT_OVER");
+
+          const state = gomoku.normalizeState(room.state);
+          const seat = room.seat;
+          if (!seat) return fail("NOT_IN_ROOM");
+
+          // 自己已同意、但对方还没同意：不重复写版本。
+          if (state.rematch[seat] && !(state.rematch.host && state.rematch.guest)) {
+            return roomResponse(current);
+          }
+
+          const vote = gomoku.applyRematchVote(state, seat);
+          if (vote.error) return fail(vote.error);
+
+          const committed = await rooms.commit(
+            app,
+            roomId,
+            uid,
+            room.version,
+            "finished",
+            vote.state,
+            vote.status,
+          );
+
+          if (committed && committed.error === "CONFLICT") {
+            continue;
+          }
+          return roomResponse(committed);
+        }
+
+        return fail("CONFLICT");
       }
 
       default:

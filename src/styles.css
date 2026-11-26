@@ -557,6 +557,15 @@ body {
   flex: 1 1 10rem;
 }
 
+
+.game-rematch {
+  margin: 0;
+  text-align: center;
+  font-size: 0.875rem;
+  line-height: 1.7;
+  color: #525252;
+}
+
 .game-message {
   max-width: 32rem;
   display: flex;

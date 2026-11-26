@@ -17,8 +17,14 @@ export interface UseRoomSyncResult {
 function nextDelay(room: RoomSnapshot | null): number {
   if (!room) return 1500;
   if (room.status === "waiting") return 2000;
-  if (room.status === "finished") return 3000;
-  const myColor = room.seat === "host" ? 1 : 2;
+  if (room.status === "finished") {
+    const votes = room.state.rematch;
+    const anyVote = !!(votes && (votes.host || votes.guest));
+    // 已经有人同意重开时，双方都需要更快看到另一方是否也同意。
+    return anyVote ? 1000 : 3000;
+  }
+  const colors = room.state.colors || { host: 1, guest: 2 };
+  const myColor = room.seat === "guest" ? colors.guest : colors.host;
   return room.state.turn === myColor ? 2500 : 1000;
 }
 

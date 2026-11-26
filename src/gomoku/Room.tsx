@@ -1,10 +1,29 @@
 import { useEffect, useState } from "react";
 import Board from "./Board";
-import { gomokuMove, gomokuRestart, RoomApiError } from "../lib/roomApi";
+import { gomokuMove, gomokuRematch, RoomApiError } from "../lib/roomApi";
 import { useRoomSync } from "../lib/useRoomSync";
 import type { RoomSnapshot } from "../lib/roomTypes";
 
 const LAST_ROOM_KEY = "gomoku:last-room";
+const DEFAULT_COLORS: { host: 1 | 2; guest: 1 | 2 } = { host: 1, guest: 2 };
+
+function colorsOf(room: RoomSnapshot) {
+  return room.state.colors || DEFAULT_COLORS;
+}
+
+function myColorNumber(room: RoomSnapshot): 0 | 1 | 2 {
+  if (!room.seat) return 0;
+  const colors = colorsOf(room);
+  return room.seat === "host" ? colors.host : colors.guest;
+}
+
+function myColorLabel(room: RoomSnapshot): string {
+  return myColorNumber(room) === 1 ? "黑棋" : "白棋";
+}
+
+function rematchVotes(room: RoomSnapshot) {
+  return room.state.rematch || { host: false, guest: false };
+}
 
 function statusText(room: RoomSnapshot, isMyTurn: boolean): string {
   if (room.status === "waiting") return "等待对方加入";
@@ -14,17 +33,20 @@ function statusText(room: RoomSnapshot, isMyTurn: boolean): string {
 
 function resultText(room: RoomSnapshot): string {
   const result = room.state.result;
+  const myColor = myColorNumber(room);
   if (result === "draw") return "平局";
-  if (result === "black") return room.seat === "host" ? "黑棋获胜，你赢了！" : "黑棋获胜";
-  if (result === "white") return room.seat === "guest" ? "白棋获胜，你赢了！" : "白棋获胜";
+  if (result === "black") return myColor === 1 ? "黑棋获胜，你赢了！" : "黑棋获胜";
+  if (result === "white") return myColor === 2 ? "白棋获胜，你赢了！" : "白棋获胜";
   return "";
 }
 
 function resultTone(room: RoomSnapshot): "win" | "lose" | "draw" | "none" {
   if (room.status !== "finished") return "none";
-  if (room.state.result === "draw") return "draw";
-  if (room.state.result === "black") return room.seat === "host" ? "win" : "lose";
-  if (room.state.result === "white") return room.seat === "guest" ? "win" : "lose";
+  const result = room.state.result;
+  const myColor = myColorNumber(room);
+  if (result === "draw") return "draw";
+  if (result === "black") return myColor === 1 ? "win" : "lose";
+  if (result === "white") return myColor === 2 ? "win" : "lose";
   return "none";
 }
 
@@ -71,14 +93,25 @@ export default function Room({ roomId }: { roomId: string }) {
     );
   }
 
-  const myColor = room.seat === "host" ? "黑棋" : "白棋";
-  const myTurnColor = room.seat === "host" ? 1 : 2;
+  const myColor = myColorLabel(room);
+  const myTurnColor = myColorNumber(room);
   const isMyTurn = room.status === "active" && room.state.turn === myTurnColor;
   const opponentOnline = room.seat === "host" ? room.guestOnline : room.hostOnline;
   const opponentJoined = room.seat === "host" ? room.guestJoined : true;
   const inviteLink = window.location.origin + window.location.pathname + "?room=" + room.id;
   const tone = resultTone(room);
   const boardDisabled = room.status !== "active" || !isMyTurn || pending;
+
+  const votes = rematchVotes(room);
+  const mySeat = room.seat;
+  const otherSeat = mySeat === "host" ? "guest" : "host";
+  const myVoted = mySeat ? !!votes[mySeat] : false;
+  const otherVoted = mySeat ? !!votes[otherSeat] : false;
+  const rematchLabel = myVoted
+    ? "等待对方同意重新开始"
+    : otherVoted
+      ? "同意重新开始"
+      : "重新开始";
 
   async function copyInvite() {
     try {
@@ -115,12 +148,12 @@ export default function Room({ roomId }: { roomId: string }) {
     }
   }
 
-  async function handleRestart() {
-    if (!room || room.status !== "finished" || pending) return;
+  async function handleRematch() {
+    if (!room || room.status !== "finished" || pending || myVoted) return;
     setPending(true);
     setActionError("");
     try {
-      const next = await gomokuRestart(room.id);
+      const next = await gomokuRematch(room.id);
       applyRoom(next);
     } catch (err) {
       const apiError = err instanceof RoomApiError ? err : new RoomApiError("NETWORK", "网络连接失败");
@@ -154,7 +187,8 @@ export default function Room({ roomId }: { roomId: string }) {
                 {statusText(room, isMyTurn)}
               </p>
               <p className="game-hint">
-                你执{myColor} · 房间 <span className="game-code">{room.id}</span>
+                第 {room.state.round || 1} 局 · 你执{myColor} · 房间{" "}
+                <span className="game-code">{room.id}</span>
               </p>
             </div>
             <span className="game-badge">
@@ -170,6 +204,18 @@ export default function Room({ roomId }: { roomId: string }) {
 
           {room.status === "finished" && (
             <p className={"game-result game-result--" + tone}>{resultText(room)}</p>
+          )}
+
+          {room.status === "finished" && (myVoted || otherVoted) && (
+            <p className="game-rematch" role="status">
+              {myVoted
+                ? "已同意重新开始，等待对方同意重新开始…"
+                : "对方已同意重新开始，点击下方按钮确认。"}
+            </p>
+          )}
+
+          {room.status === "finished" && !myVoted && !otherVoted && (
+            <p className="game-hint">双方都同意后才开始下一局，并自动交换黑白。</p>
           )}
 
           {(status === "reconnecting" || status === "offline") && (
@@ -222,10 +268,10 @@ export default function Room({ roomId }: { roomId: string }) {
             <button
               className="game-button game-button--primary"
               type="button"
-              onClick={handleRestart}
-              disabled={pending}
+              onClick={handleRematch}
+              disabled={pending || myVoted}
             >
-              {pending ? "处理中…" : "重新开始"}
+              {pending ? "处理中…" : rematchLabel}
             </button>
           )}
           <a className="game-button" href="#/">
