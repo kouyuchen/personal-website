@@ -8,6 +8,9 @@ export function parseRoomInput(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
 
+  const queryMatch = trimmed.match(/[?&]room=([A-Za-z0-9_-]{8,64})/);
+  if (queryMatch) return queryMatch[1];
+
   const hashMatch = trimmed.match(/#\/gomoku\/([A-Za-z0-9_-]{8,64})/);
   if (hashMatch) return hashMatch[1];
 

@@ -76,7 +76,7 @@ export default function Room({ roomId }: { roomId: string }) {
   const isMyTurn = room.status === "active" && room.state.turn === myTurnColor;
   const opponentOnline = room.seat === "host" ? room.guestOnline : room.hostOnline;
   const opponentJoined = room.seat === "host" ? room.guestJoined : true;
-  const inviteLink = window.location.origin + window.location.pathname + "#/gomoku/" + room.id;
+  const inviteLink = window.location.origin + window.location.pathname + "?room=" + room.id;
   const tone = resultTone(room);
   const boardDisabled = room.status !== "active" || !isMyTurn || pending;
 
