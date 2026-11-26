@@ -1,63 +1,183 @@
 # personal-website
 
-一个极简个人网站：白底黑字、一句话居中，附带一个英语填空练习，手机与电脑自适应。
+一个极简个人网站：白底黑字、一句话居中，包含英语填空和在线双人五子棋，手机与电脑自适应。
 
 - **访问地址**：https://personal-website-d3e2bi65f7a84f7-1301197628.tcloudbaseapp.com
-- **技术栈**：Vite + React + TypeScript
-- **托管**：腾讯云 CloudBase 静态网站托管（个人版，地域 ap-shanghai，环境 ID `personal-website-d3e2bi65f7a84f7`）
+- **技术栈**：Vite + React + TypeScript + CloudBase 云函数 + PostgreSQL
+- **托管**：腾讯云 CloudBase 静态网站托管（个人版，地域 ap-shanghai，环境 ID personal-website-d3e2bi65f7a84f7）
 - **域名**：使用 CloudBase 默认域名，未绑定自定义域名，不需要 ICP 备案
-- 无后端、无数据库、无登录、无统计脚本
+- **英语填空**：纯前端
+- **五子棋**：云函数 + PostgreSQL；游客匿名身份，无需注册
+
+## 在线五子棋
+
+- 入口：首页「在线五子棋」，或直接打开 默认域名 + #/gomoku
+- 创建棋局的人执黑先手，把页面上的邀请链接发给朋友；对方打开链接自动加入并执白
+- 双方棋盘通过服务器同步，刷新页面或短时断网后会自动恢复
+- 同一浏览器游客只能占一个席位；第三个人打开链接会提示房间已满
+- 游客身份由 CloudBase 匿名登录自动生成，不做注册、不收集资料；清空浏览器存储会失去原席位
+
+**同步方式**：当前环境的文档数据库未开通，PG 环境的 CloudBase Realtime 仍是 Private Alpha 且当前挂起，因此没有使用实时监听。改为云函数 + 自适应短轮询（等待 2 秒 / 对方回合 1 秒 / 自己回合 2.5 秒 / 结束 3 秒），延迟约 1 秒。同步层已抽象为 src/lib/roomTransport.ts 接口，未来可以替换为 WebSocket/Realtime，页面和规则不用改。
+
+**费用**：只消耗云函数调用和数据库调用资源点（云函数 13 点/万次，数据库 200 点/万次）。两人 30 分钟对局约 3,000 次轮询、约 64 点；个人版每月 40,000 点，正常使用足够。未购买任何额外服务，也未启用 Realtime Alpha。
 
 ## 修改网站文字
 
-编辑 [`src/content.ts`](./src/content.ts) 中的 `siteText`，改成想显示的内容，然后重新构建并部署：
+编辑 [`src/content.ts`](./src/content.ts) 中的 siteText，然后重新构建并部署：
 
-```bash
+~~~bash
 pnpm build
 tcb hosting deploy ./dist -e personal-website-d3e2bi65f7a84f7 --verify --entry index.html
-```
+~~~
 
 ## 修改英语填空题
 
-题目和答案都放在 [`src/questions.ts`](./src/questions.ts) 里，判题逻辑在 [`src/lib/gradeAnswer.ts`](./src/lib/gradeAnswer.ts)，两者分开管理，改题不用动判断代码。
+题目和答案在 [`src/questions.ts`](./src/questions.ts)，判题逻辑在 [`src/lib/gradeAnswer.ts`](./src/lib/gradeAnswer.ts)。
 
-- `sentence`：题目句子，用 `_____` 表示空缺位置；
-- `answer`：标准答案（判断时忽略前后空格和英文大小写）；
-- `id`：每题唯一，不要重复。
+- sentence：题目句子，用 _____ 表示空缺
+- answer：标准答案（判断时忽略前后空格和大小写）
+- id：每题唯一
 
-加题时直接在 `fillBlankQuestions` 数组里追加一项即可，页面会自动多显示一道题，每题独立判题。
+加题时往 fillBlankQuestions 数组追加一项即可。
+
+## 修改五子棋规则
+
+- 棋盘大小、连子数：[`cloudbase/functions/rooms/lib/gomoku.js`](./cloudbase/functions/rooms/lib/gomoku.js) 里的 BOARD_SIZE、WIN_LENGTH
+- 前端棋盘绘制同步值：[`src/gomoku/Board.tsx`](./src/gomoku/Board.tsx) 里的 SIZE 和星位
+- 改完重新部署 rooms 云函数和静态站
+- 注意：改棋盘大小会影响旧房间的 state 结构，建议只对新房间生效；目前固定 15×15、五连及以上获胜、无禁手
 
 ## 本地开发
 
-```bash
+~~~bash
 pnpm install
-pnpm dev        # 本地开发预览
-pnpm build      # 构建到 dist/
-pnpm preview    # 预览构建产物
-```
+pnpm dev --host localhost --port 8080   # 8080 已在 CloudBase 安全域名里
+pnpm build
+pnpm preview
+~~~
 
 ## 目录结构
 
-```
-index.html        页面骨架（标题、viewport、浅色模式）
-src/main.tsx      React 入口
-src/App.tsx       页面组件
-src/content.ts    网站文字（改这里）
-src/questions.ts  英语填空题库（改题目和答案）
-src/lib/gradeAnswer.ts  判题逻辑（忽略前后空格和大小写）
-src/components/FillBlankQuiz.tsx  填空练习组件
-src/styles.css    白底黑字、居中的样式
-```
+~~~text
+index.html
+src/main.tsx                 React 入口
+src/App.tsx                  首页 + hash 路由
+src/content.ts               网站文字
+src/questions.ts             英语填空题库
+src/lib/gradeAnswer.ts       英语判题
+src/components/FillBlankQuiz.tsx
+src/lib/guest.ts             游客匿名登录
+src/lib/roomApi.ts           云函数调用封装
+src/lib/roomTypes.ts         房间/棋局类型
+src/lib/roomTransport.ts     同步传输层接口
+src/lib/useRoomSync.ts       房间加入、轮询、心跳、断线重试
+src/lib/useHashRoute.ts      #/ 与 #/gomoku 路由
+src/gomoku/GomokuPage.tsx    五子棋页面入口
+src/gomoku/Lobby.tsx         创建/加入
+src/gomoku/Room.tsx          房间、邀请、状态、操作
+src/gomoku/Board.tsx         15×15 SVG 棋盘
+src/styles.css               全站样式
+cloudbase/migrations/        PostgreSQL 迁移（rooms 表 + RPC）
+cloudbase/functions/rooms/   可复用房间服务 + 五子棋逻辑
+cloudbase/functions/roomsCleanup/  过期房间清理
+cloudbase/authz.rego         OPA 策略参考
+cloudbase/function-security-rule.json  函数级安全规则参考
+cloudbaserc.json             云函数部署配置
+~~~
 
-## 部署说明
+## 云端资源
 
-- 构建产物在 `dist/`，部署命令见上方。
-- 首次部署由 CloudBase CLI 完成，CLI 已登录的本机可直接执行。
-- 默认域名受 CloudBase 平台策略限制：在浏览器中直接打开网址（或从外部链接进入）时，会先显示腾讯云的「页面访问提示」，等待约 3 秒后点「确定访问」即可进入网站。该提示页是平台对未备案默认域名的强制安全提醒，无法在不绑定已备案自定义域名的情况下移除。
-- 默认域名适合个人测试/小流量使用，不建议对外大规模分发。
+### PostgreSQL 表 rooms
+
+通用双人房间表（当前只用于 gomoku）：
+
+- id、kind、status（waiting/active/finished）
+- host_uid、guest_uid、capacity
+- state（五子棋棋盘/回合/胜负/最后一手/局数）
+- version（并发控制）、host_seen_at、guest_seen_at
+- created_at、updated_at、last_active_at
+
+RLS 已开启且无客户端策略；anon/authenticated 无表权限；service_role 可访问。客户端不能直接读表或调 RPC。
+
+**数据库函数**（只授权 service_role）：
+
+- room_create
+- room_join
+- room_get
+- room_commit_state
+- room_cleanup
+
+### 云函数
+
+- **rooms**：whoami / createRoom / joinRoom / getRoom / gomokuMove / gomokuRestart
+- **roomsCleanup**：每天 04:00 清理 7 天无活动房间
+
+### 鉴权配置（重要）
+
+PG 环境客户端调用云函数要经过两道门禁，缺一不可：
+
+1. 环境 OPA 策略（[`cloudbase/authz.rego`](./cloudbase/authz.rego)）：放通 functions 资源
+2. 函数级安全规则（[`cloudbase/function-security-rule.json`](./cloudbase/function-security-rule.json)）：默认排除匿名，rooms 放通
+
+当前环境已按上述两项配置并回读确认。**重建环境后必须重新配置**，否则匿名游客调用 rooms 会返回 403 EXCEED_AUTHORITY。
+
+## 房间查看与管理
+
+~~~bash
+# 最近房间
+tcb db execute -e personal-website-d3e2bi65f7a84f7 --sql "SELECT id,status,version,created_at,last_active_at FROM public.rooms ORDER BY created_at DESC LIMIT 20"
+
+# 删除某个房间
+tcb db execute -e personal-website-d3e2bi65f7a84f7 --sql "DELETE FROM public.rooms WHERE id='房间号'"
+
+# 手动执行过期清理
+tcb fn invoke roomsCleanup -e personal-website-d3e2bi65f7a84f7
+~~~
+
+## 部署
+
+首次或重建环境：
+
+~~~bash
+pnpm install
+pnpm build
+tcb db pg migration up -e personal-website-d3e2bi65f7a84f7
+tcb fn deploy rooms --force -e personal-website-d3e2bi65f7a84f7
+tcb fn deploy roomsCleanup --force -e personal-website-d3e2bi65f7a84f7
+tcb fn trigger create roomsCleanup --trigger-name daily-cleanup --cron "0 0 4 * * * *" -e personal-website-d3e2bi65f7a84f7
+tcb hosting deploy ./dist -e personal-website-d3e2bi65f7a84f7 --verify --entry index.html
+~~~
+
+只改前端时，构建后执行最后一条 hosting 部署即可。
+
+## 安全与限制
+
+- 前端只持有 Publishable Key；没有服务端 API Key、数据库密码
+- 服务端从 JWT 读取 uid，不信任客户端传入的 uid
+- 落子用版本号条件更新；并发提交只有一方成功
+- 房间 ID 为 96 位随机数，只用于定位，不是身份凭证
+- 游客身份属于单个浏览器；清空存储会失去席位
+- 默认域名首次访问仍需点「确定访问」，这是平台策略
+- 真实两台手机/两个网络的测试需你亲自完成；自动化测试使用的是三个独立浏览器配置，不等于真实设备
+
+## 测试记录
+
+已通过：
+
+- 首页文字和英语填空仍正常
+- 匿名登录 + 云函数 uid 透传
+- 创建房间、邀请链接、第二位加入、第三人房间已满
+- 双方轮流落子 1 秒内同步
+- 非当前回合、已占位、结束后落子服务端拒绝
+- 同 uid 不占第二席
+- 五连获胜，双方显示一致
+- 重新开始、刷新恢复、断网恢复
+- 两个并发落子：一个成功，一个 CONFLICT
+- 390/320 手机宽度无横向滚动，棋盘 358/288 正方形
 
 ## 变更记录
 
-- 2026-11-23 初始化项目并首次部署。
-- 2026-11-23 补充仓库与部署信息。
-- 2026-11-23 增加英语填空练习（题目与答案独立管理）。
+- 2026-11-23 初始化项目并首次部署
+- 2026-11-23 补充仓库与部署信息
+- 2026-11-23 增加英语填空练习
+- 2026-11-26 增加可复用房间系统、游客身份、同步层与在线五子棋

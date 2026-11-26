@@ -1,0 +1,25 @@
+{
+  "$schema": "https://static.cloudbase.net/cli/cloudbaserc.schema.json",
+  "envId": "personal-website-d3e2bi65f7a84f7",
+  "functionRoot": "./cloudbase/functions",
+  "functions": [
+    {
+      "name": "rooms",
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "timeout": 10,
+      "memorySize": 256,
+      "installDependency": true,
+      "description": "可复用双人房间与五子棋后端"
+    },
+    {
+      "name": "roomsCleanup",
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "timeout": 10,
+      "memorySize": 256,
+      "installDependency": true,
+      "description": "清理过期房间"
+    }
+  ]
+}
