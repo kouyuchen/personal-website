@@ -80,3 +80,27 @@ export async function gomokuRematch(roomId: string): Promise<RoomSnapshot> {
   if (!body.room) throw new RoomApiError("INTERNAL", "重新开始失败");
   return body.room;
 }
+
+export async function requestUndo(roomId: string): Promise<RoomSnapshot> {
+  const body = await call<ApiBody>("gomokuUndoRequest", { roomId });
+  if (!body.room) throw new RoomApiError("INTERNAL", "申请悔棋失败");
+  return body.room;
+}
+
+export async function acceptUndo(roomId: string, requestId: string): Promise<RoomSnapshot> {
+  const body = await call<ApiBody>("gomokuUndoAccept", { roomId, requestId });
+  if (!body.room) throw new RoomApiError("INTERNAL", "同意悔棋失败");
+  return body.room;
+}
+
+export async function rejectUndo(roomId: string, requestId: string): Promise<RoomSnapshot> {
+  const body = await call<ApiBody>("gomokuUndoReject", { roomId, requestId });
+  if (!body.room) throw new RoomApiError("INTERNAL", "拒绝悔棋失败");
+  return body.room;
+}
+
+export async function cancelUndo(roomId: string, requestId: string): Promise<RoomSnapshot> {
+  const body = await call<ApiBody>("gomokuUndoCancel", { roomId, requestId });
+  if (!body.room) throw new RoomApiError("INTERNAL", "取消悔棋失败");
+  return body.room;
+}

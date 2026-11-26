@@ -16,6 +16,7 @@ export interface UseRoomSyncResult {
 
 function nextDelay(room: RoomSnapshot | null): number {
   if (!room) return 1500;
+  if (room.state.undoRequest) return 1000;
   if (room.status === "waiting") return 2000;
   if (room.status === "finished") {
     const votes = room.state.rematch;

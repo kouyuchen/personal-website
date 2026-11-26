@@ -12,6 +12,23 @@ export interface GomokuRematchVotes {
   guest: boolean;
 }
 
+export interface GomokuMoveRecord {
+  row: number;
+  col: number;
+  color: 1 | 2;
+}
+
+export interface GomokuUndoRequest {
+  id: string;
+  by: RoomSeat;
+  byColor: 1 | 2;
+  round: number;
+  moveCount: number;
+  boardHash: string;
+  status: RoomStatus;
+  baseVersion: number;
+}
+
 export interface GomokuState {
   board: number[];
   turn: 1 | 2;
@@ -20,9 +37,11 @@ export interface GomokuState {
   winningLine: number[] | null;
   lastMove: { row: number; col: number; color: 1 | 2 } | null;
   round: number;
-  // 旧房间可能没有这两个字段，前端按 host=黑、guest=白、未同意处理。
+  // 旧房间可能没有这些字段，前端按 host=黑、guest=白、未同意、无历史处理。
   colors?: GomokuColors;
   rematch?: GomokuRematchVotes;
+  history?: GomokuMoveRecord[];
+  undoRequest?: GomokuUndoRequest | null;
 }
 
 export interface RoomSnapshot {

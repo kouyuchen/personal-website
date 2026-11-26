@@ -558,6 +558,30 @@ body {
 }
 
 
+.game-undo {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #ededed;
+}
+
+.game-undo__title {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #171717;
+}
+
+.game-undo__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.game-undo__actions .game-button {
+  flex: 1 1 8rem;
+}
+
 .game-rematch {
   margin: 0;
   text-align: center;

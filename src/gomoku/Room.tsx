@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
 import Board from "./Board";
-import { gomokuMove, gomokuRematch, RoomApiError } from "../lib/roomApi";
+import {
+  acceptUndo,
+  cancelUndo,
+  gomokuMove,
+  gomokuRematch,
+  rejectUndo,
+  requestUndo,
+  RoomApiError,
+} from "../lib/roomApi";
 import { useRoomSync } from "../lib/useRoomSync";
 import type { RoomSnapshot } from "../lib/roomTypes";
 
@@ -25,7 +33,15 @@ function rematchVotes(room: RoomSnapshot) {
   return room.state.rematch || { host: false, guest: false };
 }
 
+function undoRequestOf(room: RoomSnapshot) {
+  return room.state.undoRequest || null;
+}
+
 function statusText(room: RoomSnapshot, isMyTurn: boolean): string {
+  const undo = undoRequestOf(room);
+  if (undo) {
+    return undo.by === room.seat ? "等待对方同意悔棋" : "对方申请悔棋";
+  }
   if (room.status === "waiting") return "等待对方加入";
   if (room.status === "finished") return resultText(room);
   return isMyTurn ? "轮到你落子" : "等待对方落子";
@@ -48,6 +64,14 @@ function resultTone(room: RoomSnapshot): "win" | "lose" | "draw" | "none" {
   if (result === "black") return myColor === 1 ? "win" : "lose";
   if (result === "white") return myColor === 2 ? "win" : "lose";
   return "none";
+}
+
+function toApiError(err: unknown, fallback: string): RoomApiError {
+  return err instanceof RoomApiError ? err : new RoomApiError("NETWORK", fallback);
+}
+
+function shouldRefresh(code: string): boolean {
+  return code === "CONFLICT" || code === "UNDO_STALE" || code === "UNDO_NOT_FOUND";
 }
 
 export default function Room({ roomId }: { roomId: string }) {
@@ -96,11 +120,14 @@ export default function Room({ roomId }: { roomId: string }) {
   const myColor = myColorLabel(room);
   const myTurnColor = myColorNumber(room);
   const isMyTurn = room.status === "active" && room.state.turn === myTurnColor;
+  const isTurnPlayer = room.seat !== null && room.state.turn === myTurnColor;
+  const undo = undoRequestOf(room);
+  const history = room.state.history;
   const opponentOnline = room.seat === "host" ? room.guestOnline : room.hostOnline;
   const opponentJoined = room.seat === "host" ? room.guestJoined : true;
   const inviteLink = window.location.origin + window.location.pathname + "?room=" + room.id;
   const tone = resultTone(room);
-  const boardDisabled = room.status !== "active" || !isMyTurn || pending;
+  const boardDisabled = room.status !== "active" || !isMyTurn || pending || !!undo;
 
   const votes = rematchVotes(room);
   const mySeat = room.seat;
@@ -112,6 +139,17 @@ export default function Room({ roomId }: { roomId: string }) {
     : otherVoted
       ? "同意重新开始"
       : "重新开始";
+
+  const isUndoRequester = !!(undo && undo.by === room.seat);
+  const canRespondUndo = !!(undo && undo.by !== room.seat);
+  const canRequestUndo =
+    !undo &&
+    room.seat !== null &&
+    (room.status === "active" || room.status === "finished") &&
+    isTurnPlayer &&
+    room.state.moveCount >= 2 &&
+    Array.isArray(history) &&
+    history.length >= 2;
 
   async function copyInvite() {
     try {
@@ -128,8 +166,14 @@ export default function Room({ roomId }: { roomId: string }) {
     window.setTimeout(() => setCopied(false), 1500);
   }
 
+  function handleActionError(err: unknown, fallback: string) {
+    const apiError = toApiError(err, fallback);
+    setActionError(apiError.message);
+    if (shouldRefresh(apiError.code)) refresh();
+  }
+
   async function handlePlay(row: number, col: number) {
-    if (!room || boardDisabled) return;
+    if (!room || boardDisabled || undo) return;
     if (room.state.board[row * 15 + col] !== 0) {
       setActionError("这个位置已经有棋子");
       return;
@@ -140,25 +184,77 @@ export default function Room({ roomId }: { roomId: string }) {
       const next = await gomokuMove(room.id, row, col);
       applyRoom(next);
     } catch (err) {
-      const apiError = err instanceof RoomApiError ? err : new RoomApiError("NETWORK", "网络连接失败");
-      setActionError(apiError.message);
-      if (apiError.code === "CONFLICT") refresh();
+      handleActionError(err, "网络连接失败");
     } finally {
       setPending(false);
     }
   }
 
   async function handleRematch() {
-    if (!room || room.status !== "finished" || pending || myVoted) return;
+    if (!room || room.status !== "finished" || pending || myVoted || undo) return;
     setPending(true);
     setActionError("");
     try {
       const next = await gomokuRematch(room.id);
       applyRoom(next);
     } catch (err) {
-      const apiError = err instanceof RoomApiError ? err : new RoomApiError("NETWORK", "网络连接失败");
-      setActionError(apiError.message);
-      if (apiError.code === "CONFLICT") refresh();
+      handleActionError(err, "网络连接失败");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleUndoRequest() {
+    if (!room || !canRequestUndo || pending) return;
+    setPending(true);
+    setActionError("");
+    try {
+      const next = await requestUndo(room.id);
+      applyRoom(next);
+    } catch (err) {
+      handleActionError(err, "网络连接失败");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleUndoAccept() {
+    if (!room || !undo || !canRespondUndo || pending) return;
+    setPending(true);
+    setActionError("");
+    try {
+      const next = await acceptUndo(room.id, undo.id);
+      applyRoom(next);
+    } catch (err) {
+      handleActionError(err, "网络连接失败");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleUndoReject() {
+    if (!room || !undo || !canRespondUndo || pending) return;
+    setPending(true);
+    setActionError("");
+    try {
+      const next = await rejectUndo(room.id, undo.id);
+      applyRoom(next);
+    } catch (err) {
+      handleActionError(err, "网络连接失败");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleUndoCancel() {
+    if (!room || !undo || !isUndoRequester || pending) return;
+    setPending(true);
+    setActionError("");
+    try {
+      const next = await cancelUndo(room.id, undo.id);
+      applyRoom(next);
+    } catch (err) {
+      handleActionError(err, "网络连接失败");
     } finally {
       setPending(false);
     }
@@ -206,7 +302,47 @@ export default function Room({ roomId }: { roomId: string }) {
             <p className={"game-result game-result--" + tone}>{resultText(room)}</p>
           )}
 
-          {room.status === "finished" && (myVoted || otherVoted) && (
+          {undo && (
+            <div className="game-undo" role="status">
+              <p className="game-undo__title">悔棋申请</p>
+              <p className="game-hint">
+                同意后将撤销最近一轮双方落子（两颗棋子）；拒绝或取消则棋局保持原样。
+              </p>
+              <div className="game-undo__actions">
+                {isUndoRequester ? (
+                  <button
+                    className="game-button"
+                    type="button"
+                    onClick={handleUndoCancel}
+                    disabled={pending}
+                  >
+                    {pending ? "处理中…" : "取消申请"}
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      className="game-button game-button--primary"
+                      type="button"
+                      onClick={handleUndoAccept}
+                      disabled={pending}
+                    >
+                      {pending ? "处理中…" : "同意悔棋"}
+                    </button>
+                    <button
+                      className="game-button"
+                      type="button"
+                      onClick={handleUndoReject}
+                      disabled={pending}
+                    >
+                      拒绝悔棋
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {!undo && room.status === "finished" && (myVoted || otherVoted) && (
             <p className="game-rematch" role="status">
               {myVoted
                 ? "已同意重新开始，等待对方同意重新开始…"
@@ -214,7 +350,7 @@ export default function Room({ roomId }: { roomId: string }) {
             </p>
           )}
 
-          {room.status === "finished" && !myVoted && !otherVoted && (
+          {!undo && room.status === "finished" && !myVoted && !otherVoted && (
             <p className="game-hint">双方都同意后才开始下一局，并自动交换黑白。</p>
           )}
 
@@ -264,7 +400,17 @@ export default function Room({ roomId }: { roomId: string }) {
         />
 
         <div className="game-actions">
-          {room.status === "finished" && (
+          {canRequestUndo && (
+            <button
+              className="game-button"
+              type="button"
+              onClick={handleUndoRequest}
+              disabled={pending}
+            >
+              {pending ? "处理中…" : "申请悔棋"}
+            </button>
+          )}
+          {!undo && room.status === "finished" && (
             <button
               className="game-button game-button--primary"
               type="button"
@@ -279,7 +425,7 @@ export default function Room({ roomId }: { roomId: string }) {
           </a>
         </div>
 
-        {room.status === "active" && (
+        {room.status === "active" && !undo && (
           <p className="game-hint">
             点击棋盘交叉点落子；不是你的回合或已有棋子的位置不会生效。
           </p>
